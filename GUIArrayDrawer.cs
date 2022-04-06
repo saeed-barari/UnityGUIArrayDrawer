@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Codice.Client.BaseCommands.Differences;
 using DG.DemiEditor;
 using UnityEditor;
 using UnityEngine;
@@ -19,6 +20,15 @@ static public class GUIArrayDrawer
         public int movingItemIndex = -1;
         public int movingTargetIndex;
         public int selectedIndex = 0;
+        public void Add()
+        {
+            var a = isChildExpanded.ToList();
+            a.Add(!foldOut);
+            isChildExpanded = a.ToArray();
+            var b = childRects.ToList();
+            b.Add(Rect.zero);
+            childRects = b.ToArray();
+        }
     }
     static public float animationSpeed = 0.05f;
     static public Color SELECTED_BLUE = new Color(0, 0, 1, 0.4f);
@@ -55,6 +65,7 @@ static public class GUIArrayDrawer
             if (GUILayout.Button("+", GUILayout.Width(45), GUILayout.ExpandHeight(true)))
             {
                 list.Add(new T());
+                data.Add();
             }
         });
 
@@ -66,84 +77,84 @@ static public class GUIArrayDrawer
                 return;
 
             var oldGUI = GUI.enabled;
-            if(data.isMoveAnimation)
+            if (data.isMoveAnimation)
                 GUI.enabled = false;
-            
+
             for (int i = 0; i < list.Count; i++)
             {
                 if (list.Count - 1 < i || i < 0)
                     continue;
 
-                DrawSelectionButton(i);
-                var rect = EditorGUILayout.BeginVertical();
+                data.childRects[i] = EditorGUILayout.BeginVertical();
                 {
+                    DrawSelectionBackground(i);
+                    // if in animation, we'll want control over the layouts to apply smooth animation
+                    var col = GUI.color;
+                    if (data.movingItemIndex == i)
+                        GUI.color = Color.cyan;
 
-                    GUILayout.BeginHorizontal();
+                    EditorGUILayout.BeginHorizontal();
                     {
+                        DrawReorders(i);
+
+
+                        EditorGUILayout.BeginVertical();
                         if (data.isChildExpanded.Length != list.Count)
                             data.isChildExpanded = new bool[list.Count];
 
                         if (data.foldOut)
+                        {
+                            EditorGUI.BeginChangeCheck();
                             data.isChildExpanded[i] = EditorGUILayout.Foldout(
                                 data.isChildExpanded[i],
                                 displayName == null ? $"Element {i + 1}" : displayName(i), true);
-                    }
-                    GUILayout.EndHorizontal();
-
-                    if (data.isChildExpanded[i])
-                    {
-                        // if in animation, we'll want control over the layouts to apply smooth animation
-                        var col = GUI.color;
-                        if (data.movingItemIndex == i)
-                            GUI.color = Color.cyan;
-
-                        EditorGUILayout.BeginHorizontal();
+                            if (EditorGUI.EndChangeCheck())
+                            {
+                                EditorWindow.focusedWindow.Repaint();
+                            }
+                        }
+                        if (!data.foldOut || data.isChildExpanded[i])
                         {
-                            DrawReorders(i);
-
-                            EditorGUILayout.BeginVertical();
                             EditorGUI.indentLevel++;
                             onDraw(list[i]);
                             EditorGUI.indentLevel--;
-                            EditorGUILayout.EndVertical();
-
-                            DrawDelete(i);
                         }
-                        EditorGUILayout.EndHorizontal();
+                        EditorGUILayout.EndVertical();
 
-                        GUILayout.Space(2);
-                        TaskEditorHelper.GuiLine(2, TaskEditor.BACKGROUND_COL);
-                        GUILayout.Space(2);
-                        GUI.color = col;
+                        DrawDelete(i);
                     }
+                    EditorGUILayout.EndHorizontal();
+
+                    GUILayout.Space(2);
+                    TaskEditorHelper.GuiLine(2, TaskEditor.BACKGROUND_COL);
+                    GUILayout.Space(2);
+                    GUI.color = col;
                 }
                 EditorGUILayout.EndVertical();
-
-                if(rect != Rect.zero)
-                    data.childRects[i] = rect;
             }
 
             GUI.enabled = oldGUI;
 
-            void DrawSelectionButton(int index)
+            void DrawSelectionBackground(int index)
             {
-                if(data.childRects == null || data.childRects.Length -1 < index) return;
+                if (data.childRects == null || data.childRects.Length - 1 < index) return;
 
                 var col = index == data.selectedIndex ? SELECTED_BLUE : new Color(0, 0, 0, 0);
                 EditorGUI.DrawRect(data.childRects[index], col);
-                if(Event.current.type == EventType.MouseDown)
+
+                if (Event.current.type == EventType.MouseDown)
                 {
-                    Debug.Log($"rect {data.childRects[index]} mouse at {Event.current.mousePosition}");
-                    if(data.childRects[index].Contains(Event.current.mousePosition))
+                    if (data.childRects[index].Contains(Event.current.mousePosition))
                     {
-                        Debug.Log($"clicked!!");
                         data.selectedIndex = index;
                         EditorWindow.focusedWindow.Repaint();
                     }
                 }
-                
-                if(data.childRects[index] == Rect.zero)
+
+                if (data.childRects[index] == Rect.zero)
+                {
                     EditorWindow.focusedWindow.Repaint();
+                }
 
             }
 
@@ -177,7 +188,7 @@ static public class GUIArrayDrawer
                 }
                 return false;
             }
-            
+
             IEnumerator MoveItem(Data data, List<T> list)
             {
                 data.isMoveAnimation = true;
